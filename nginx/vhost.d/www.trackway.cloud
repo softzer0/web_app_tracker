@@ -1,0 +1,1 @@
+rewrite ^(.*) https://trackway.cloud$1 permanent;

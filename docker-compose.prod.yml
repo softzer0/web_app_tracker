@@ -1,0 +1,123 @@
+version: '3.7'
+
+services:
+  backend:
+    build:
+      context: ./
+      dockerfile: backend/Dockerfile.prod
+    command: ../wait-for-it.sh db:5432 -- gunicorn backend.wsgi:application --error-logfile /var/log/error_file_g.log --capture-output --enable-stdio-inheritance --workers 3 --bind 0.0.0.0:8000
+    volumes:
+      - ./backend:/home/root/backend
+      - ./prod/staticfiles:/home/root/backend/static
+    expose:
+      - 8000
+    env_file:
+      - backend/.env.prod
+    depends_on:
+      - db
+    links:
+      - db:db
+    networks:
+      - djangonetwork
+  nginx-proxy:
+    container_name: nginx-proxy
+    build: ./nginx
+    restart: always
+    volumes:
+      - ./prod/staticfiles:/usr/share/nginx/static
+      - html:/usr/share/nginx/html
+      - ./nginx/certs:/etc/nginx/certs
+      - vhost:/etc/nginx/vhost.d
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    ports:
+      - 443:443
+      - 80:80
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - djangonetwork
+  nginx-proxy-letsencrypt:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    env_file:
+      - nginx/.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./nginx/certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+    depends_on:
+      - nginx-proxy
+    networks:
+      - djangonetwork
+  mail:
+    image: tvial/docker-mailserver:latest
+    hostname: ''
+    domainname: trackway.cloud
+    container_name: mail
+    ports:
+      - "25:25"
+      - "143:143"
+      - "587:587"
+      - "993:993"
+    volumes:
+      - maildata:/var/mail
+      - mailstate:/var/mail-state
+      - maillogs:/var/log/mail
+      - ./prod/mailserver:/tmp/docker-mailserver
+      - ./nginx/certs/:/etc/letsencrypt/live/:ro
+    environment:
+      - ONE_DIR=1
+#      - SMTP_ONLY=1
+      - SSL_TYPE=letsencrypt
+#    env_file:
+#      - mailserver.env
+    cap_add:
+      - NET_ADMIN
+      - SYS_PTRACE
+    networks:
+      - djangonetwork
+    restart: always
+  frontend:
+    build:
+      context: ./
+      dockerfile: frontend/Dockerfile.prod
+    volumes:
+      - html:/home/root/frontend/dist
+      - /home/root/frontend/node_modules
+#    env_file:
+#      - frontend/.env.dev
+  db:
+    image: postgis/postgis:9.5-2.5-alpine
+    container_name: db
+    volumes:
+      - ./prod/postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=tracker_app
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=admin
+    expose:
+      - 5432
+    networks:
+      - djangonetwork
+  location_server:
+    image: waysoft/location_server:latest
+    ports:
+      - "9050:9050/udp"
+    depends_on:
+      - db
+    links:
+      - db:db
+    environment:
+      - LOCATION_SERVER_PRODUCTION_MODE=TRUE
+    networks:
+      - djangonetwork
+networks:
+  djangonetwork:
+    driver: bridge
+volumes:
+  html:
+  vhost:
+  maildata:
+  mailstate:
+  maillogs:

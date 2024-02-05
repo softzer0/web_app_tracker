@@ -1,0 +1,61 @@
+version: '3.7'
+
+services:
+  backend:
+    build:
+      context: backend/
+      dockerfile: Dockerfile.dev
+    entrypoint: ./entrypoint.sh
+    command: ../wait-for-it.sh db:5432 -- python manage.py runserver 0.0.0.0:50000
+    volumes:
+      - ./backend:/home/root/web_app_tracker/backend
+    ports:
+      - 50000:50000
+    env_file:
+      - backend/.env.dev
+    depends_on:
+      - db
+    links:
+      - db:db
+    networks:
+      - djangonetwork
+  frontend:
+    build:
+      context: frontend/
+      dockerfile: Dockerfile.dev
+    command: npm run serve -- --port 8080
+    volumes:
+      - ./frontend:/home/root/web_app_tracker/frontend
+      - /home/root/web_app_tracker/frontend/node_modules
+    ports:
+      - 8080:8080
+#    env_file:
+#      - frontend/.env.dev
+  db:
+    image: postgis/postgis:9.5-2.5-alpine
+    container_name: db
+    volumes:
+      - ./prod/postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=tracker_app
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=admin
+    ports:
+      - "5432:5432"
+    networks:
+      - djangonetwork
+  location_server:
+    image: waysoft/location_server:latest
+    ports:
+      - "9050:9050/udp"
+    depends_on:
+      - db
+    links:
+      - db:db
+    environment:
+      - LOCATION_SERVER_PRODUCTION_MODE=TRUE
+    networks:
+      - djangonetwork
+networks:
+  djangonetwork:
+    driver: bridge

@@ -1,0 +1,11 @@
+# pull official base image
+FROM node:12-buster-slim
+
+# set work directory
+WORKDIR /home/root/frontend
+
+# install dependencies
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend .
+RUN npm run build
